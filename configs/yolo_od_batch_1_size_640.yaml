@@ -1,0 +1,10 @@
+# Crowd Counting V1 with batch size 1 and 512 x 512 of image size
+# Author: LINKS Foundation
+
+model_path: weights/yolov8n-seg.onnx
+providers:
+  - CUDAExecutionProvider
+  - CPUExecutionProvider
+conf_threshold: 0.5
+patch_size: 640
+batch_size: 1

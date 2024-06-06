@@ -17,6 +17,10 @@ from sava_ml_toolbox import module1
 
 # example usage of module1
 ```
+## Export YOLO family to ONNX
+
+After installing ultralitics, the following is the command:
+yolo export model=yolov8x-seg.pt format=onnx
 
 ## Folder structure
 
