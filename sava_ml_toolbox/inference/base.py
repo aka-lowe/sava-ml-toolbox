@@ -12,8 +12,11 @@ class Model(ABC):
     def __init__(self):
         pass
 
+    def __call__(self, *args, **kwargs):
+        return self._inference(*args, **kwargs)
+
     @abstractmethod
-    def inference(self):
+    def _inference(self):
         pass
 
     @abstractmethod

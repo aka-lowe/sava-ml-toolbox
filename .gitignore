@@ -344,3 +344,5 @@ $RECYCLE.BIN/
 *.pth
 *.ckpt
 *.onnx
+archive
+pred_*.jpg

@@ -1,4 +1,4 @@
-from .inference import YOLOV8SegModel
+from .inference import YOLOv8SegONNX
 from .structures import DectObject, DetectionListResult
 
-__all__ = ["YOLOV8SegModel", "DetectionListResult", "DectObject"]
+__all__ = ["YOLOv8SegONNX", "DetectionListResult", "DectObject"]

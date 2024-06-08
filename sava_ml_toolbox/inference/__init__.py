@@ -1,1 +1,2 @@
-from .yolov8 import *
+from .inference import *
+from .yolov8seg import *

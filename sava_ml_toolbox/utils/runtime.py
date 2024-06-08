@@ -44,3 +44,19 @@ class ONNXRuntime(BaseRuntime):
         ort_outs = self.ort_session.run(None, ort_inputs)
         # Return the output prediction
         return ort_outs
+
+    def get_inputs(self) -> List:
+        """Get the input details of the ONNX model.
+
+        Returns:
+            List: List of input details.
+        """
+        return self.ort_session.get_inputs()
+
+    def get_outputs(self) -> List:
+        """Get the output details of the ONNX model.
+
+        Returns:
+            List: List of output details.
+        """
+        return self.ort_session.get_outputs()
