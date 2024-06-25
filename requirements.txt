@@ -1,7 +1,6 @@
-numpy==1.26.4
-opencv-python==4.10.0.82
-onnxruntime-gpu==1.18.0
-pillow==10.3.0
+numpy>=1.17.4
+opencv-python>=4.10.0.84
+onnxruntime-gpu>=1.10.0
+pillow>=10.3.0
+pyyaml>=6.0.1
 sahi==0.11.16
-scikit-image==0.24.0
-imagecodecs==2024.6.1

@@ -101,7 +101,7 @@ The output of the `predict` function is a class which contains the following att
 
 After installing ultralitics through pip, the following command allows to export yolo models:
 ```bash
-yolo export model=yolov8x-seg.pt format=onnx
+yolo export model=yolov8x-seg.pt format=onnx opset=15
 ```
 
 
