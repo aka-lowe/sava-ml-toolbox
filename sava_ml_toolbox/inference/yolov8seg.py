@@ -4,6 +4,7 @@ from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
+from PIL import Image
 
 from sava_ml_toolbox.utils import draw_detections, nms, sigmoid, xywh2xyxy
 from sava_ml_toolbox.utils.runtime import ONNXRuntime
@@ -11,7 +12,7 @@ from sava_ml_toolbox.utils.runtime import ONNXRuntime
 from .base import Model
 
 
-class YOLOv8SegONNX(Model):
+class YOLOv8Seg(Model):
     """
     This class represents a YOLOv8 model for object detection and instance segmentation, loaded from an ONNX file. It uses the ONNXRuntime for inference.
 
@@ -37,30 +38,24 @@ class YOLOv8SegONNX(Model):
 
     def __init__(
         self,
-        model_path: str,
-        providers: Optional[List[str]] = ["CPUExecutionProvider"],
+        runtime: Optional[ONNXRuntime],
         patch_size: int = 640,
         conf_thres=0.7,
         iou_thres=0.5,
         num_masks=32,
-        mean: List[float] = [0.485, 0.456, 0.406],
-        std: List[float] = [0.229, 0.224, 0.225],
     ):
         self.conf_threshold = conf_thres
         self.iou_threshold = iou_thres
         self.num_masks = num_masks
-
-        self._build_model(model_path, providers)
-
-    def __call__(
-        self, image: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        return self.segment_objects(image)
-
-    def _build_model(self, model_path: str, providers: List[str]) -> None:
-        self.session = ONNXRuntime(model_path, providers)
+        self.patch_size = patch_size
+        self.session = runtime
         self._get_input_details()
         self._get_output_details()
+
+    def __call__(
+        self, image: Image.Image
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        return self.segment_objects(np.array(image))
 
     def segment_objects(
         self, image: np.ndarray
@@ -79,15 +74,19 @@ class YOLOv8SegONNX(Model):
 
     def _preprocessing(self, image: np.ndarray) -> np.ndarray:
         self.img_height, self.img_width = image.shape[:2]
-        input_img = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        input_img = cv2.resize(input_img, (self.input_width, self.input_height))
+        # input_img = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        input_img = cv2.resize(image, (self.input_height, self.input_width))
         input_img = input_img / 255.0
         input_img = input_img.transpose(2, 0, 1)
         input_tensor = input_img[np.newaxis, :, :, :].astype(np.float32)
         return input_tensor
 
     def _inference(self, input_tensor: np.ndarray) -> List[np.ndarray]:
-        return self.session.run(input_tensor)
+        # Prepare input data for the ONNX Runtime session
+        ort_inputs = {
+            self.session.get_inputs()[0].name: np.array(input_tensor).astype(np.float32)
+        }
+        return self.session.run(input_data=ort_inputs)
 
     def _process_box_output(
         self, box_output: np.ndarray

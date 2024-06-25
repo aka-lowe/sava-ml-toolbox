@@ -1,97 +1,6 @@
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import cv2
-import numpy as np
-
-COCO_CLASSES = [
-    "person",
-    "bicycle",
-    "car",
-    "motorcycle",
-    "airplane",
-    "bus",
-    "train",
-    "truck",
-    "boat",
-    "traffic light",
-    "fire hydrant",
-    "stop sign",
-    "parking meter",
-    "bench",
-    "bird",
-    "cat",
-    "dog",
-    "horse",
-    "sheep",
-    "cow",
-    "elephant",
-    "bear",
-    "zebra",
-    "giraffe",
-    "backpack",
-    "umbrella",
-    "handbag",
-    "tie",
-    "suitcase",
-    "frisbee",
-    "skis",
-    "snowboard",
-    "sports ball",
-    "kite",
-    "baseball bat",
-    "baseball glove",
-    "skateboard",
-    "surfboard",
-    "tennis racket",
-    "bottle",
-    "wine glass",
-    "cup",
-    "fork",
-    "knife",
-    "spoon",
-    "bowl",
-    "banana",
-    "apple",
-    "sandwich",
-    "orange",
-    "broccoli",
-    "carrot",
-    "hot dog",
-    "pizza",
-    "donut",
-    "cake",
-    "chair",
-    "couch",
-    "potted plant",
-    "bed",
-    "dining table",
-    "toilet",
-    "tv",
-    "laptop",
-    "mouse",
-    "remote",
-    "keyboard",
-    "cell phone",
-    "microwave",
-    "oven",
-    "toaster",
-    "sink",
-    "refrigerator",
-    "book",
-    "clock",
-    "vase",
-    "scissors",
-    "teddy bear",
-    "hair drier",
-    "toothbrush",
-]
-
-# Create a list of colors for each class where each color is a tuple of 3 integer values
-COLORS = np.random.default_rng(3).uniform(0, 255, size=(len(COCO_CLASSES), 3))
-
-
-from typing import List
-
 import numpy as np
 
 
@@ -213,6 +122,7 @@ def draw_detections(
     boxes: np.ndarray,
     scores: np.ndarray,
     class_ids: List[int],
+    detect_classes: Dict[str, str],
     mask_alpha: float = 0.3,
     mask_maps: Optional[np.ndarray] = None,
 ) -> np.ndarray:
@@ -230,22 +140,25 @@ def draw_detections(
     Returns:
     - np.ndarray: The image with the drawn detections.
     """
+    # Create a list of colors for each class where each color is a tuple of 3 integer values
+    colors = np.random.default_rng(3).uniform(0, 255, size=(len(detect_classes), 3))
+
     img_height, img_width = image.shape[:2]
     size = min([img_height, img_width]) * 0.0006
     text_thickness = int(min([img_height, img_width]) * 0.001)
 
-    mask_img = draw_masks(image, boxes, class_ids, mask_alpha, mask_maps)
+    mask_img = draw_masks(image, boxes, colors, class_ids, mask_alpha, mask_maps)
 
     # Draw bounding boxes and labels of detections
     for box, score, class_id in zip(boxes, scores, class_ids):
-        color = COLORS[class_id]
+        color = colors[class_id]
 
-        x1, y1, x2, y2 = box.astype(int)
+        x1, y1, x2, y2 = np.array(box).astype(int)
 
         # Draw rectangle
         cv2.rectangle(mask_img, (x1, y1), (x2, y2), color, 2)
 
-        label = COCO_CLASSES[class_id]
+        label = detect_classes[str(class_id)]
         caption = f"{label} {int(score * 100)}%"
         (tw, th), _ = cv2.getTextSize(
             text=caption,
@@ -274,6 +187,7 @@ def draw_detections(
 def draw_masks(
     image: np.ndarray,
     boxes: np.ndarray,
+    colors: np.ndarray,
     class_ids: List[int],
     mask_alpha: float = 0.3,
     mask_maps: Optional[np.ndarray] = None,
@@ -295,9 +209,9 @@ def draw_masks(
 
     # Draw bounding boxes and labels of detections
     for i, (box, class_id) in enumerate(zip(boxes, class_ids)):
-        color = COLORS[class_id]
+        color = colors[class_id]
 
-        x1, y1, x2, y2 = box.astype(int)
+        x1, y1, x2, y2 = np.array(box).astype(int)
 
         # Draw fill mask image
         if mask_maps is None:

@@ -37,16 +37,32 @@ pip install -e .
 Pick one of the configurations from the `config` folder or create one in YAML format, with the following template:
 
 ```yaml
+# Runtime configuration
 model_path: <path_to_your_model>
-runtime: <runtime_provider>
+runtime: onnxruntime | tensorrt
 providers:
   - <provider_1>
   - <provider_2>
-conf_threshold: <confidence_threshold>
-batch_size: <batch_size>
+batch_size: 1 # For now, 1 is the only accepted value
+
+# Model configuration
 conf_thres: <confidence_threshold>
 iou_thres: <iou_threshold>
-num_masks: <number_of_masks>
+num_masks: <number of masks for the segmentation part>
+use_sahi_optim: True | False
+
+# SAHI related configuration
+slice_height: <int sliding window height> 
+slice_width: <int sliding window width>  
+overlap_height_ratio: <vertical overlapping value 0<x<1 >
+overlap_width_ratio: <horizontal overlapping value 0<x<1 >
+
+# Classes
+classes:
+  - 0: class_0
+  - 1: class_1
+  - ...
+
 ```
 
 Then you can use the Inference Engine as follow:
@@ -60,22 +76,15 @@ config = "path/to/config.yaml"
 # Create Inference Engine
 inference_engine = InferenceEngine(config)
 
-# Load the sample image as numpy array
-# ...
-
+# Load the sample image as PIL Image
+img = Image.open(<image_path>)
 
 # Perform inference
 results = inference_engine.predict(img)
 
-# Print the results
-out_img = draw_detections(
-    np.array(img),
-    results.getbboxes(),
-    results.getscores(),
-    results.getclassids(),
-    0.4,
-    results.getsegms(),
-)
+# Draw the results
+out_img = inference_engine.draw_results(img, results)
+
 # ...
 ```
 

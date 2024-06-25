@@ -20,10 +20,6 @@ class Model(ABC):
         pass
 
     @abstractmethod
-    def _build_model(self):
-        pass
-
-    @abstractmethod
     def _preprocessing(self):
         pass
 

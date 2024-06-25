@@ -12,6 +12,12 @@ class BaseRuntime:
     def run(self) -> None:
         pass
 
+    def get_inputs(self) -> List:
+        pass
+
+    def get_outputs(self) -> List:
+        pass
+
 
 # ONNX Runtime implementation of BaseRuntime
 class ONNXRuntime(BaseRuntime):
@@ -25,7 +31,11 @@ class ONNXRuntime(BaseRuntime):
         super(ONNXRuntime, self).__init__()
         self.ort_session = rt.InferenceSession(path, providers=providers)
 
-    def run(self, input_data: np.array) -> np.array:
+    def run(
+        self,
+        input_data: dict,
+        output_names: List[str] = None,
+    ) -> np.array:
         """Perform ONNX Runtime inference.
 
         Args:
@@ -34,16 +44,8 @@ class ONNXRuntime(BaseRuntime):
         Returns:
             np.array: The output prediction from the ONNX Runtime.
         """
-        # Prepare input data for the ONNX Runtime session
-        ort_inputs = {
-            self.ort_session.get_inputs()[0]
-            .name: np.array(input_data)
-            .astype(np.float32)
-        }
-        # Run the inference using ONNX Runtime
-        ort_outs = self.ort_session.run(None, ort_inputs)
         # Return the output prediction
-        return ort_outs
+        return self.ort_session.run(output_names, input_data)
 
     def get_inputs(self) -> List:
         """Get the input details of the ONNX model.

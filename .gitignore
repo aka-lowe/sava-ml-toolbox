@@ -346,4 +346,5 @@ $RECYCLE.BIN/
 *.onnx
 archive
 pred_*.jpg
+*_pred.jpg
 .vscode
