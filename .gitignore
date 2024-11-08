@@ -348,3 +348,6 @@ archive
 pred_*.jpg
 *_pred.jpg
 .vscode
+
+# extras
+test.py
