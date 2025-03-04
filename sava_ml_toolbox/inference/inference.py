@@ -67,17 +67,37 @@ class InferenceEngine:
                 num_masks=self.config["num_masks"],
             )
 
+    def xyxy_to_xywh(self, boxes: np.array) -> np.array:
+        """
+        Convert bounding boxes from xyxy format to xywh format.
+
+        Args:
+            boxes (np.array): Bounding boxes in xyxy format with shape (N, 4).
+
+        Returns:
+            np.array: Bounding boxes in xywh format with shape (N, 4).
+        """
+        if len(boxes) == 0:
+            return []
+        xywh_boxes = np.zeros_like(boxes)
+        xywh_boxes[:, 0] = (boxes[:, 0] + boxes[:, 2]) / 2  # center x
+        xywh_boxes[:, 1] = (boxes[:, 1] + boxes[:, 3]) / 2  # center y
+        xywh_boxes[:, 2] = boxes[:, 2] - boxes[:, 0]  # width
+        xywh_boxes[:, 3] = boxes[:, 3] - boxes[:, 1]  # height
+        return xywh_boxes
+
     def predict(self, img: Image.Image) -> DetectionListResult:
         boxes, scores, class_ids, mask_maps = self.model(img)
+        boxes = self.xyxy_to_xywh(boxes)
         out = DetectionListResult()
         for box, score, class_id, mask_map in zip(boxes, scores, class_ids, mask_maps):
             detection = DectObject(
                 xywh=box, score=score, class_id=class_id, segm=mask_map
             )
-            detection.xywh = box
-            detection.score = score
-            detection.class_id = class_id
-            detection.segm = mask_map
+            # detection.xywh = box
+            # detection.score = score
+            # detection.class_id = class_id
+            # detection.segm = mask_map
             out.append(detection)
 
         return out

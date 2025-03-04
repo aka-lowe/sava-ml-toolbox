@@ -348,3 +348,7 @@ archive
 pred_*.jpg
 *_pred.jpg
 .vscode
+data/coco2017
+*.jpg
+*.jpeg
+data/*

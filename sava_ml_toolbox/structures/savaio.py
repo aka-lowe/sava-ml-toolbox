@@ -131,3 +131,17 @@ class DetectionListResult:
     def getsegms(self) -> List[List[float]]:
         """Returns a list of segmentation masks for all detected objects."""
         return [dectobj.segm for dectobj in self._dectobjs]
+
+    def getcocoformat(self) -> List[dict]:
+        """Returns a list of COCO format annotations for all detected objects."""
+        return [
+            {
+                "bbox": dectobj.xywh,
+                "category_id": dectobj.class_id,
+                "score": dectobj.score,
+                "segmentation": dectobj.segm,
+                "area": 0.0,
+                "iscrowd": 0,
+            }
+            for dectobj in self._dectobjs
+        ]

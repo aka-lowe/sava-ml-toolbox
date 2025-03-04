@@ -1,3 +1,7 @@
 ultralytics
 matplotlib
 PyYAML
+pycocotools
+scikit-learn
+fiftyone
+termplotlib
