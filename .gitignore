@@ -348,6 +348,8 @@ archive
 pred_*.jpg
 *_pred.jpg
 .vscode
+# extras
+test.py
 data/coco2017
 *.jpg
 *.jpeg
