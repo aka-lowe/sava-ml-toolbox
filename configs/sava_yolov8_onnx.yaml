@@ -1,0 +1,29 @@
+ # Author: PAS Group DTU
+
+# Runtime configuration
+model_path: weights/sava_yolov8s-seg.engine
+runtime: onnxruntime
+providers:
+  - CUDAExecutionProvider
+  - CPUExecutionProvider
+batch_size: 1 # For now, 1 is the only accepted value
+
+# Model configuration
+conf_thres: 0.3
+iou_thres: 0.3
+num_masks: 32
+use_sahi_optim: True
+
+# SAHI related configuration
+slice_height: 640
+slice_width: 640
+overlap_height_ratio: 0.2 
+overlap_width_ratio: 0.2
+
+# Classes
+classes:
+  - 0: person
+  - 1: mammal
+  - 2: veichle
+  - 3: bird
+ 
