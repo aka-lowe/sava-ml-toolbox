@@ -8,8 +8,8 @@ def is_aarch64():
 
 def install_onnx_for_aarch64():
     print("Installing custom ONNX Runtime GPU version for aarch64...")
-    url = "https://nvidia.box.com/shared/static/48dtuob7meiw6ebgfsfqakc9vse62sg4.whl"
-    filename = "onnxruntime_gpu-1.18.0-cp310-cp310-linux_aarch64.whl"
+    url = "https://nvidia.box.com/shared/static/zostg6agm00fb6t5uisw51qi6kpcuwzd.whl"
+    filename = "onnxruntime_gpu-1.17.0-cp38-cp38-linux_aarch64.whl"
 
     subprocess.check_call(["wget", url, "-O", filename])
 
