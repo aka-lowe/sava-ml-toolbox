@@ -88,16 +88,16 @@ class InferenceEngine:
 
     def predict(self, img: Image.Image) -> DetectionListResult:
         boxes, scores, class_ids, mask_maps = self.model(img)
-        boxes = self.xyxy_to_xywh(boxes)
+        # boxes = self.xyxy_to_xywh(boxes)
         out = DetectionListResult()
         for box, score, class_id, mask_map in zip(boxes, scores, class_ids, mask_maps):
             detection = DectObject(
                 xywh=box, score=score, class_id=class_id, segm=mask_map
             )
-            # detection.xywh = box
-            # detection.score = score
-            # detection.class_id = class_id
-            # detection.segm = mask_map
+            detection.xywh = box
+            detection.score = score
+            detection.class_id = class_id
+            detection.segm = mask_map
             out.append(detection)
 
         return out

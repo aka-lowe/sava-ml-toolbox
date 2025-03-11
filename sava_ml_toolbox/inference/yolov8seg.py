@@ -163,8 +163,8 @@ class YOLOv8Seg(Model):
             crop_mask = cv2.resize(
                 scale_crop_mask, (x2 - x1, y2 - y1), interpolation=cv2.INTER_CUBIC
             )
-            if blur_size[0] == 0 or blur_size[1] == 0:
-                blur_size = (1, 1)
+            # if blur_size[0] == 0 or blur_size[1] == 0:
+            #     blur_size = (1, 1)
 
             crop_mask = cv2.blur(crop_mask, blur_size)
 
