@@ -34,6 +34,7 @@ class InferenceEngine:
             )
 
         elif self.config["runtime"] == "tensorrt":
+            
             assert "model_path" in self.config, "model_path is required for tensorrt"
             assert os.path.isfile(
                 self.config["model_path"]
