@@ -133,7 +133,7 @@ class TensorRTRuntime(BaseRuntime):
         """
 
         # Get input name
-        input name = next(iter(input_data))
+        input_name = next(iter(input_data))
         input_data = input_data[input_name]
 
 
