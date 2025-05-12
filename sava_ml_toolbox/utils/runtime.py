@@ -164,7 +164,7 @@ class TensorRTRuntime(BaseRuntime):
 
         max_batch_size = 1 # Assuming max batch size is 1 for now
 
-        for i in range(self.engine.num_bindings):
+        for i in range(len(self.engine)):
             binding_name = self.engine.get_binding_name(i)
             shape = self.engine.get_binding_shape(i) # Note: This shape might include -1 for dynamic dimensions
             dtype = trt.nptype(self.engine.get_binding_dtype(i))
