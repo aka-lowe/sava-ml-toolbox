@@ -34,7 +34,16 @@ class InferenceEngine:
             )
 
         elif self.config["runtime"] == "tensorrt":
-            raise NotImplementedError("TensorRT runtime is not implemented yet.")
+            assert "model_path" in self.config, "model_path is required for tensorrt"
+            assert os.path.isfile(
+                self.config["model_path"]
+            ), "The model_path does not refer to a valid file."
+
+            from sava_ml_toolbox.utils.runtime import TensorRTRuntime
+
+            runtime = TensorRTRuntime(
+                path=self.config["model_path"],
+            )
 
         else:
             raise ValueError(
