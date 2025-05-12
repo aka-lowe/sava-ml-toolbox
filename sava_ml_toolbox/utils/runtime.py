@@ -7,9 +7,6 @@ import pycuda.driver as cuda
 import pycuda.autoinit
 
 
-
-
-
 # Base class for Runtime
 class BaseRuntime:
     def __init__(self) -> None:
@@ -69,268 +66,219 @@ class ONNXRuntime(BaseRuntime):
         """
         return self.ort_session.get_outputs()
 
-
-
-# Simple class to mimic onnxruntime.NodeArg structure
-class BindingInfo:
-    def __init__(self, name: str, shape: tuple, dtype: np.dtype):
-        self.name = name
-        self.shape = shape
-        # Convert numpy dtype to string representation similar to ONNX Runtime
-        # This might need refinement based on exact types needed downstream
-        if dtype == np.float32:
-            self.type = 'tensor(float)'
-        elif dtype == np.float16:
-             self.type = 'tensor(float16)'
-        elif dtype == np.int32:
-            self.type = 'tensor(int32)'
-        elif dtype == np.int64:
-            self.type = 'tensor(int64)'
-        elif dtype == np.uint8:
-            self.type = 'tensor(uint8)'
-        # Add other type mappings as needed
-        else:
-            self.type = f'tensor({str(dtype)})'
-        self._dtype = dtype # Keep original numpy dtype if needed
-
-
-# TensorRT Runtime implementation of BaseRuntime
+# Updated TensorRT implementation of BaseRuntime
 class TensorRTRuntime(BaseRuntime):
-    """
-    TensorRT Runtime implementation adhering to the BaseRuntime interface.
-    Loads and runs inference using a TensorRT engine file.
-    """
-    def __init__(
-        self,
-        path: str,
-        trt_logger_level: trt.Logger.Severity = trt.Logger.WARNING,
-        **kwargs
-    ) -> None:
+    """ TensorRT Runtime Implementation (Updated) """
+
+    def __init__(self, engine_path: str, profile_idx: int = 0) -> None:
         """
         Initializes the TensorRT runtime.
 
         Args:
-            path: Path to the serialized TensorRT engine file (.engine).
-            providers: Ignored for TensorRT. Included for potential signature compatibility.
-            trt_logger_level: Minimum severity level for the TensorRT logger.
+            engine_path: Path to the serialized TensorRT engine file (.engine).
+            profile_idx: The optimization profile index to use (default: 0).
+                         Relevant for engines built with dynamic shapes.
         """
-        super(TensorRTRuntime, self).__init__()
+        super().__init__()
+        self.engine_path = engine_path
+        self.profile_idx = profile_idx
+        self.logger = trt.Logger(trt.Logger.WARNING) # Or INFO, ERROR, etc.
+        self.runtime = trt.Runtime(self.logger)
 
-        if not path.endswith(".engine"):
-             raise ValueError(f"Invalid path: '{path}'. TensorRT runtime requires a '.engine' file.")
-
-        self.engine_path = path
-        self.logger = trt.Logger(trt_logger_level)
-        self.engine = None
-        self.context = None
-        self.stream = None
-
-        # Store binding information (inputs/outputs)
-        self._input_bindings = [] # List to store BindingInfo objects for inputs
-        self._output_bindings = [] # List to store BindingInfo objects for outputs
-        self._input_buffers = {} # Dict: {name: {'host': host_mem, 'device': device_mem}}
-        self._output_buffers = {} # Dict: {name: {'host': host_mem, 'device': device_mem}}
-        self.bindings = [] # List of device pointers (int) for execution context
-
-        self._load_engine()
-        self._allocate_buffers()
-
-    def _load_engine(self):
-        """Loads the TensorRT engine from the specified path."""
-        self.logger.log(trt.Logger.INFO, f"Loading TensorRT engine from: {self.engine_path}")
+        # Load and deserialize the engine
         try:
-            runtime = trt.Runtime(self.logger)
-            with open(self.engine_path, "rb") as f:
+            with open(engine_path, "rb") as f:
                 serialized_engine = f.read()
-            self.engine = runtime.deserialize_cuda_engine(serialized_engine)
+            self.engine = self.runtime.deserialize_cuda_engine(serialized_engine)
             if not self.engine:
-                raise RuntimeError("Failed to deserialize the TensorRT engine.")
-
-            # Create execution context AFTER checking for dynamic shapes if needed
-            self.context = self.engine.create_execution_context()
-            if not self.context:
-                raise RuntimeError("Failed to create TensorRT execution context.")
-
-            self.stream = cuda.Stream()
-            self.logger.log(trt.Logger.INFO, "TensorRT engine and context loaded successfully.")
+                raise RuntimeError(f"Failed to deserialize engine from {engine_path}")
+        except FileNotFoundError:
+             raise FileNotFoundError(f"Engine file not found at {engine_path}")
         except Exception as e:
-            self.logger.log(trt.Logger.ERROR, f"Error loading TensorRT engine: {e}")
-            raise
+             raise RuntimeError(f"Error loading TensorRT engine: {e}")
 
-    def _allocate_buffers(self):
-        """Allocates memory buffers for inputs and outputs on the device."""
-        if not self.engine:
-            raise RuntimeError("Engine not loaded before allocating buffers.")
+        # Verify profile index
+        if not (0 <= self.profile_idx < self.engine.num_optimization_profiles):
+             raise ValueError(f"Invalid profile_idx {self.profile_idx}. Engine has {self.engine.num_optimization_profiles} profiles.")
 
-        max_batch_size = 1 # Assuming max batch size is 1 for now
+        # Create execution context
+        self.context = self.engine.create_execution_context()
+        if not self.context:
+            raise RuntimeError("Failed to create TensorRT execution context.")
 
-        for i in range(len(self.engine)):
-            binding_name = self.engine.get_binding_name(i)
-            shape = self.engine.get_binding_shape(i) # Note: This shape might include -1 for dynamic dimensions
-            dtype = trt.nptype(self.engine.get_binding_dtype(i))
-            is_input = self.engine.binding_is_input(i)
+        # Activate optimization profile
+        self.context.set_optimization_profile_async(self.profile_idx, cuda.Stream().handle) # Use a temporary stream handle
 
-            actual_shape = shape
+        # Store tensor specifications and allocate buffers
+        self.stream = cuda.Stream()
+        self.bindings = []
+        self.host_buffers = {} # Store host buffers by name
+        self.device_buffers = {} # Store device buffers by name (int address)
+        self.tensor_specs = {} # Store name, shape, dtype, is_input
 
-            # Calculate buffer size (handle potential batch dim if explicit)
-            # Assuming max_batch_size is 1 for now
-            if self.engine.has_implicit_batch_dimension:
-                 # Shape from engine already includes spatial/channel dims for max_batch_size=1
-                 size = trt.volume(actual_shape) * max_batch_size # Or use self.engine.max_batch_size
-            else:
-                 # Explicit batch dim, usually shape[0] == -1 for dynamic batch
-                 # For allocation, use max batch size from profile or a predefined one
-                 # Using max_batch_size=1 here:
-                 size = trt.volume(actual_shape[1:]) # Calculate size without batch dim
-                 size *= max_batch_size # Multiply by max batch size we want to support
+        for i in range(self.engine.num_io_tensors):
+            name = self.engine.get_tensor_name(i)
+            is_input = self.engine.get_tensor_mode(name) == trt.TensorIOMode.INPUT
+            dtype = trt.nptype(self.engine.get_tensor_dtype(name))
+            shape = self.engine.get_tensor_shape(name) # Engine shape (can have -1)
+
+            # Determine allocation shape (use max profile shape for dynamic dims)
+            alloc_shape = shape
+            if -1 in shape:
+                profile_shapes = self.engine.get_profile_shape(self.profile_idx, name)
+                # profile_shapes: (min_shape, opt_shape, max_shape)
+                alloc_shape = profile_shapes[2] # Use max shape for allocation
+                print(f"Info: Tensor '{name}' is dynamic. Allocating buffer for max shape {alloc_shape}.")
+
+            if tuple(alloc_shape) == (-1,): # Handle scalar outputs if needed, allocate at least 1 element
+                alloc_shape = (1,)
+                print(f"Warning: Tensor '{name}' has shape (-1,). Allocating buffer for shape (1,).")
 
 
             # Allocate memory
+            size = trt.volume(alloc_shape)
             host_mem = cuda.pagelocked_empty(size, dtype)
             device_mem = cuda.mem_alloc(host_mem.nbytes)
-            self.bindings.append(int(device_mem)) # Add device pointer to bindings list
 
-            # Store buffer info and binding info
-            binding_info = BindingInfo(binding_name, tuple(shape), dtype) # Use original shape for info
-            buffer_info = {'host': host_mem, 'device': device_mem, 'shape': tuple(shape), 'dtype': dtype}
+            self.bindings.append(int(device_mem))
+            self.host_buffers[name] = host_mem
+            self.device_buffers[name] = int(device_mem) # Store address
+            self.tensor_specs[name] = {'shape': shape, 'dtype': dtype, 'is_input': is_input, 'index': i}
 
-            if is_input:
-                self._input_bindings.append(binding_info)
-                self._input_buffers[binding_name] = buffer_info
-            else:
-                self._output_bindings.append(binding_info)
-                self._output_buffers[binding_name] = buffer_info
+        # Separate input/output specs for get_inputs/get_outputs compatibility
+        self._input_specs = [
+            {'name': name, 'shape': spec['shape'], 'dtype': spec['dtype']}
+            for name, spec in self.tensor_specs.items() if spec['is_input']
+        ]
+        self._output_specs = [
+            {'name': name, 'shape': spec['shape'], 'dtype': spec['dtype']}
+            for name, spec in self.tensor_specs.items() if not spec['is_input']
+        ]
 
-        self.logger.log(trt.Logger.INFO, "Allocated TensorRT input/output buffers.")
 
-    def run(
-        self,
-        input_data: Dict[str, np.ndarray],
-        output_names: List[str] = None,
-    ) -> List[np.ndarray]:
+    def run(self, input_data: Dict[str, np.array], output_names: List[str] = None) -> Dict[str, np.array]:
         """
-        Perform TensorRT inference.
+        Perform inference using the TensorRT engine.
 
         Args:
-            input_data (Dict[str, np.ndarray]): Dictionary mapping input names to numpy arrays.
-                                                Data should be preprocessed and match model requirements.
-            output_names (List[str]): Optional. If provided, can be used to verify output order (currently ignored).
+            input_data: Dictionary mapping input tensor names to NumPy arrays.
+            output_names: Ignored in this implementation. Kept for interface compatibility.
 
         Returns:
-            List[np.ndarray]: A list of output numpy arrays in the engine's output binding order.
+            Dict[str, np.array]: Dictionary mapping output tensor names to NumPy arrays.
         """
-        if not self.context:
-            raise RuntimeError("TensorRT context not initialized.")
-        if not self.engine:
-            raise RuntimeError("TensorRT engine not initialized.")
+        if not isinstance(input_data, dict):
+            raise TypeError(f"Expected input_data to be a Dict[str, np.array], but got {type(input_data)}")
 
-        # --- Prepare Inputs ---
+        # --- Input Handling ---
         for name, array in input_data.items():
-            if name not in self._input_buffers:
-                raise ValueError(f"Input name '{name}' not found in engine bindings.")
+            spec = self.tensor_specs.get(name)
+            if spec is None or not spec['is_input']:
+                raise ValueError(f"Input tensor name '{name}' not found or is not an input.")
 
-            buffer_info = self._input_buffers[name]
-            expected_shape = buffer_info['shape'] # Shape may include batch dim or -1
-            expected_dtype = buffer_info['dtype']
+            # Check and cast dtype
+            if array.dtype != spec['dtype']:
+                # print(f"Warning: Input '{name}' dtype mismatch ({array.dtype} vs {spec['dtype']}). Casting...")
+                array = array.astype(spec['dtype'])
 
-            # --- Basic Input Validation (Adapt as needed) ---
-            # Check dtype
-            if array.dtype != expected_dtype:
-                 self.logger.log(trt.Logger.WARNING, f"Input '{name}' dtype mismatch: Got {array.dtype}, Expected {expected_dtype}. Attempting cast.")
-                 array = array.astype(expected_dtype)
+            # Set input shape in context if dynamic
+            if -1 in spec['shape']:
+                if not self.context.set_input_shape(name, array.shape):
+                     raise ValueError(f"Failed to set input shape {array.shape} for dynamic tensor '{name}'. Check profile constraints.")
 
-            # Check shape (needs refinement for dynamic shapes and explicit/implicit batch)
-            # This is a simplified check assuming batch size 1 and matching non-batch dimensions
-            if not self.engine.has_implicit_batch_dimension:
-                 # Explicit batch dimension (e.g., [-1, 3, 224, 224])
-                 # Assuming input array has batch dim = 1
-                 if array.shape[1:] != expected_shape[1:]:
-                     raise ValueError(f"Input '{name}' shape mismatch: Got {array.shape}, Expected non-batch shape {expected_shape[1:]}")
-                 # If dynamic shapes, potentially set context binding shape here
-                 # self.context.set_binding_shape(binding_index_for_name, array.shape)
-            else:
-                 # Implicit batch dimension
-                 if array.shape != expected_shape:
-                     raise ValueError(f"Input '{name}' shape mismatch: Got {array.shape}, Expected {expected_shape}")
+            # Check if runtime shape matches (after potential context setting)
+            runtime_shape = tuple(self.context.get_tensor_shape(name))
+            if array.shape != runtime_shape:
+                # Allow for broadcasting if batch dim is 1/-1 and input has no batch dim
+                if len(runtime_shape) == len(array.shape) + 1 and runtime_shape[0] in [1, -1]:
+                    print(f"Info: Input '{name}' automatically adding batch dimension.")
+                    array = np.expand_dims(array, axis=0)
+                    if array.shape != runtime_shape: # Re-check after adding dim
+                         raise ValueError(f"Input '{name}' shape {input_data[name].shape} (original) / {array.shape} (adjusted) is incompatible with expected runtime shape {runtime_shape}")
+                else:
+                    raise ValueError(f"Input '{name}' shape {array.shape} is incompatible with expected runtime shape {runtime_shape}")
+
+            # Copy data HtoD
+            host_buf = self.host_buffers[name]
+            # Ensure host buffer is large enough (especially if input size varies dynamically)
+            if array.nbytes > host_buf.nbytes:
+                 raise ValueError(f"Input data for '{name}' ({array.nbytes} bytes) exceeds allocated host buffer size ({host_buf.nbytes} bytes). Engine might need rebuild with larger max profile shape.")
+            # Use slicing to avoid reallocating host_buf if possible
+            host_buf_view = host_buf.reshape(host_buf.shape) # Get a writable view
+            np.copyto(host_buf_view[:array.size], array.ravel()) # Copy flattened data
+            cuda.memcpy_htod_async(self.device_buffers[name], host_buf_view, self.stream)
 
 
-            # Copy data to pagelocked host buffer
-            np.copyto(buffer_info['host'], array.ravel()) # Flatten and copy
-
-            # Transfer input data to the GPU asynchronously.
-            cuda.memcpy_htod_async(buffer_info['device'], buffer_info['host'], self.stream)
+        # --- Set Binding Addresses in Context ---
+        # This is crucial as device buffer addresses might change if reallocated
+        for name, addr in self.device_buffers.items():
+             self.context.set_tensor_address(name, addr)
 
         # --- Execute Inference ---
-        # Note: execute_async_v2 is preferred for explicit batch & dynamic shapes
-        self.context.execute_async_v2(bindings=self.bindings, stream_handle=self.stream.handle)
+        if not self.context.execute_async_v2(bindings=[], stream_handle=self.stream.handle):
+             raise RuntimeError("TensorRT inference failed.")
 
-        # --- Retrieve Outputs ---
-        results = {}
-        for name, buffer_info in self._output_buffers.items():
-            # Transfer predictions back from the GPU asynchronously.
-            cuda.memcpy_dtoh_async(buffer_info['host'], buffer_info['device'], self.stream)
-            # Store the host buffer (reshaping happens after sync)
-            results[name] = buffer_info
+        # --- Output Handling ---
+        outputs = {}
+        for name, spec in self.tensor_specs.items():
+            if not spec['is_input']:
+                host_buf = self.host_buffers[name]
+                device_buf_addr = self.device_buffers[name]
+                # Get actual output shape for this run
+                output_shape = tuple(self.context.get_tensor_shape(name))
 
-        # Synchronize the stream to ensure completion
+                # Calculate required bytes based on actual output shape
+                expected_bytes = trt.volume(output_shape) * np.dtype(spec['dtype']).itemsize
+
+                # Check if host buffer is large enough
+                if expected_bytes > host_buf.nbytes:
+                    raise RuntimeError(f"Output tensor '{name}' size ({expected_bytes} bytes) exceeds allocated host buffer ({host_buf.nbytes} bytes). Max profile shape might be too small.")
+
+                # Copy DtoH
+                cuda.memcpy_dtoh_async(host_buf, device_buf_addr, self.stream)
+
+                # Store shaped view of the relevant part of the buffer
+                # Important: create a copy so the user gets an independent array
+                num_elements = trt.volume(output_shape)
+                outputs[name] = host_buf[:num_elements].reshape(output_shape).copy()
+
+
         self.stream.synchronize()
+        return outputs
 
-        # Reshape outputs and return in the correct order
-        # The order should match self._output_bindings
-        final_outputs = []
-        for binding_info in self._output_bindings:
-            name = binding_info.name
-            buffer_info = results[name]
-            # Shape needs careful handling for dynamic outputs
-            # Assuming output shape is fixed or correctly inferred for batch size 1
-            output_shape = buffer_info['shape']
-            # If explicit batch, shape might need adjustment (e.g., add batch dim 1)
-            if not self.engine.has_implicit_batch_dimension:
-                 # Example: If output shape from engine is (C, H, W), reshape to (1, C, H, W)
-                 batch_size = 1 # Assuming batch size 1 for now
-                 actual_output_shape = (batch_size, ) + output_shape[1:] # Add batch dim
-            else:
-                 actual_output_shape = output_shape
-
-            # Ensure the buffer has the right number of elements before reshaping
-            expected_elements = np.prod(actual_output_shape)
-            if buffer_info['host'].size != expected_elements:
-                # This might happen with dynamic shapes if allocation was based on max size
-                # Need to determine the actual output size based on inference results if possible
-                # Or ensure allocation/reshaping logic correctly handles dynamic cases
-                 self.logger.log(trt.Logger.WARNING, f"Output '{name}' element count mismatch ({buffer_info['host'].size} vs {expected_elements}). Using available elements.")
-                 # Slice the buffer if necessary, though this requires knowing the actual output size
-                 reshaped_output = buffer_info['host'][:expected_elements].reshape(actual_output_shape)
-
-            else:
-                reshaped_output = buffer_info['host'].reshape(actual_output_shape)
-
-            final_outputs.append(reshaped_output.copy()) # Copy to avoid returning internal buffer
-
-
-        return final_outputs
-
-    def get_inputs(self) -> List[BindingInfo]:
+    def get_inputs(self) -> List[Dict[str, Any]]:
         """
-        Get the input details of the TensorRT engine.
-
-        Returns:
-            List[BindingInfo]: List of input binding details (name, shape, type).
+        Get specifications (name, shape, dtype) of the engine's input tensors.
+        Shape reflects the engine's definition (may contain -1 for dynamic).
         """
-        return self._input_bindings
+        return self._input_specs
 
-    def get_outputs(self) -> List[BindingInfo]:
+    def get_outputs(self) -> List[Dict[str, Any]]:
         """
-        Get the output details of the TensorRT engine.
-
-        Returns:
-            List[BindingInfo]: List of output binding details (name, shape, type).
+        Get specifications (name, shape, dtype) of the engine's output tensors.
+        Shape reflects the engine's definition (may contain -1 for dynamic).
         """
-        return self._output_bindings
+        return self._output_specs
 
-    def __del__(self):
-        """Clean up CUDA resources."""
-        # pycuda.autoinit handles context cleanup.
-        # Explicitly free allocated memory if needed, though context destruction should handle it.
-        # If stream is created manually, it might need destroying.
-        pass
+    # Optional: Cleanup method
+    def cleanup(self):
+        """Manually clean up CUDA memory."""
+        print("Cleaning up TensorRT resources...")
+        for name, addr in self.device_buffers.items():
+            try:
+                # Need a way to reconstruct CuDeviceMemory object to call free()
+                # This is tricky as we only stored the address (int).
+                # pycuda might handle this via context destruction with autoinit,
+                # but explicit free is safer if references are held elsewhere.
+                # For now, rely on pycuda.autoinit or manual context management.
+                pass # cuda.mem_free(addr) # This function expects address, maybe works? Needs testing.
+            except Exception as e:
+                print(f"Warning: Error freeing device memory for {name}: {e}")
+        self.stream = None # Release stream reference
+        print("TensorRT resource cleanup finished (Device memory freeing depends on CUDA context management).")
+
+    # Make it usable with 'with' statement for automatic cleanup
+    def __enter__(self):
+        return self
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.cleanup(
