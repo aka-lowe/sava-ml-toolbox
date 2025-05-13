@@ -42,7 +42,7 @@ class InferenceEngine:
             # Ensure TensorRTRuntime is imported correctly
             from sava_ml_toolbox.utils.runtime import TensorRTRuntime 
 
-            runtime_session = TensorRTRuntime( # Use the path from config
+            runtime = TensorRTRuntime( # Use the path from config
                 path=self.config["model_path"],
                 # Pass batch_size from config to TensorRTRuntime constructor
                 batch_size=self.config.get("batch_size", 1) 

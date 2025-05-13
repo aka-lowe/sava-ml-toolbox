@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image
 
 from sava_ml_toolbox.utils import draw_detections, nms, sigmoid, xywh2xyxy
-from sava_ml_toolbox.utils.runtime import ONNXRuntime, TensorRTRuntime
+from sava_ml_toolbox.utils.runtime import BaseRuntime
 
 from .base import Model
 
@@ -85,7 +85,7 @@ class YOLOv8Seg(Model):
         
         input_feed = {self.input_names[0]: input_tensor}
 
-        outputs = self.session.run(input_data=input_feed, output_names=self.output_names if hassattr(self.session, 'ort_session') else None)
+        outputs = self.session.run(input_data=input_feed, output_names=self.output_names if hasattr(self.session, 'ort_session') else None)
         return outputs
 
     def _process_box_output(

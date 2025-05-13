@@ -213,14 +213,13 @@ class TensorRTRuntime(BaseRuntime): # Inherit from BaseRuntime
                 # If engine has dynamic input shapes, this is where set_input_shape would be called on context
                 # For now, we assume shapes match after preproc or engine is static for the profile.
                 print(f"Warning: Input for '{name}' shape {data_array.shape} vs allocated {self.h_inputs[i].shape}. Ensure consistency or handle dynamic shapes.")
-            
-            np.copyto(self.h_inputs[i], data_array.ravel())
+
+
+            np.copyto(self.h_inputs[i], data_array)
             cuda.memcpy_htod_async(self.d_inputs[i], self.h_inputs[i], self.stream)
 
-        if self.engine.has_implicit_batch_dimension:
-             self.context.execute_async(batch_size=self.batch_size, bindings=self.bindings, stream_handle=self.stream.handle)
-        else:
-            self.context.execute_async_v3(stream_handle=self.stream.handle)
+
+        self.context.execute_async_v3(stream_handle=self.stream.handle)
 
         for i in range(len(self.output_tensor_names)):
             cuda.memcpy_dtoh_async(self.h_outputs[i], self.d_outputs[i], self.stream)
