@@ -33,19 +33,20 @@ class InferenceEngine:
                 providers=self.config["providers"],
             )
 
-        elif self.config["runtime"] == "tensorrt":
-            
+        elif self.config["runtime"].lower() == "tensorrt":
             assert "model_path" in self.config, "model_path is required for tensorrt"
             assert os.path.isfile(
                 self.config["model_path"]
-            ), "The model_path does not refer to a valid file."
+            ), f"The TensorRT engine file does not exist: {self.config['model_path']}"
 
-            from sava_ml_toolbox.utils.runtime import TensorRTRuntime
+            # Ensure TensorRTRuntime is imported correctly
+            from sava_ml_toolbox.utils.runtime import TensorRTRuntime 
 
-            runtime = TensorRTRuntime(
+            runtime_session = TensorRTRuntime( # Use the path from config
                 path=self.config["model_path"],
+                # Pass batch_size from config to TensorRTRuntime constructor
+                batch_size=self.config.get("batch_size", 1) 
             )
-
         else:
             raise ValueError(
                 f"Invalid runtime {self.config['runtime']} specified in config file."

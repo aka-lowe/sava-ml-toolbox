@@ -38,7 +38,7 @@ class YOLOv8Seg(Model):
 
     def __init__(
         self,
-        runtime: Optional[ONNXRuntime],
+        runtime: Optional[ONNXRuntime, TeensorRTRuntime],
         patch_size: int = 640,
         conf_thres=0.7,
         iou_thres=0.5,
@@ -82,11 +82,11 @@ class YOLOv8Seg(Model):
         return input_tensor
 
     def _inference(self, input_tensor: np.ndarray) -> List[np.ndarray]:
-        # Prepare input data for the ONNX Runtime session
-        ort_inputs = {
-            self.session.get_inputs()[0].name: np.array(input_tensor).astype(np.float32)
-        }
-        return self.session.run(input_data=ort_inputs)
+        
+        input_feed = {self.input_names[0]: input_tensor}
+
+        outputs = self.session.run(input_data=input_feed, output_names=self.output_names if hassattr(self.session, 'ort_session') else None)
+        return outputs
 
     def _process_box_output(
         self, box_output: np.ndarray
