@@ -38,7 +38,7 @@ class YOLOv8Seg(Model):
 
     def __init__(
         self,
-        runtime: Optional[ONNXRuntime, TeensorRTRuntime],
+        runtime: Optional[ONNXRuntime, TensorRTRuntime],
         patch_size: int = 640,
         conf_thres=0.7,
         iou_thres=0.5,
