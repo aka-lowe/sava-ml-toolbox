@@ -13,13 +13,19 @@ class BaseRuntime:
         pass
 
     def run(self) -> None:
-        pass
+        raise NotImplementedError("Subclasses must implement the 'run' method.")
 
     def get_inputs(self) -> List:
-        pass
+        raise NotImplementedError("Subclasses must implement the 'get_inputs' method.")
 
     def get_outputs(self) -> List:
+        raise NotImplementedError("Subclasses must implement the 'get_outputs' method.")    
+
+    def release(self) -> None:
         pass
+
+    def __del__(self) -> None:
+        self.release()
 
 
 # ONNX Runtime implementation of BaseRuntime
@@ -68,11 +74,7 @@ class ONNXRuntime(BaseRuntime):
 
 
 
-import tensorrt as trt
-import pycuda.driver as cuda
-import pycuda.autoinit # Important for initializing CUDA context
-import numpy as np
-from typing import Dict, Union, List
+
 
 class TensorRTRuntime(BaseRuntime): # Inherit from BaseRuntime
     TRT_TO_NP_DTYPE = {
