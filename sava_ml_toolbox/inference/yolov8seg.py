@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image
 
 from sava_ml_toolbox.utils import draw_detections, nms, sigmoid, xywh2xyxy
-from sava_ml_toolbox.utils.runtime import ONNXRuntime
+from sava_ml_toolbox.utils.runtime import ONNXRuntime, TensorRTRuntime
 
 from .base import Model
 
