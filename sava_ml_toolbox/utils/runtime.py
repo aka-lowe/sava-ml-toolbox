@@ -228,6 +228,10 @@ class TensorRTRuntime(BaseRuntime): # Inherit from BaseRuntime
         # Return a list of numpy arrays, similar to ONNXRuntime session.run()
         return [out.copy() for out in self.h_outputs]
 
+    def get_stream_handle(self):
+        return self.stream.handle
+
+
     def release(self):
         print(f"Releasing TensorRT resources for {self.engine_path}...")
         for d_mem_list in [self.d_inputs, self.d_outputs]:
