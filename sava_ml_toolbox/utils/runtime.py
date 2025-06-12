@@ -1,11 +1,7 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Union, cast
 
 import numpy as np
-import onnxruntime as rt
-import tensorrt as trt
-import pycuda.driver as cuda
-import pycuda.autoinit
-
+import onnxruntime as rt  # type: ignore
 
 # Base class for Runtime
 class BaseRuntime:
@@ -33,28 +29,29 @@ class ONNXRuntime(BaseRuntime):
     def __init__(
         self,
         path: str,
-        providers: List[str] = [
-            "CPUExecutionProvider",
-        ],
+        providers: Optional[List[str]] = None,
     ) -> None:
         super(ONNXRuntime, self).__init__()
+        if providers is None:
+            providers = ["CPUExecutionProvider"]
         self.ort_session = rt.InferenceSession(path, providers=providers)
 
     def run(
         self,
-        input_data: dict,
-        output_names: List[str] = None,
-    ) -> np.array:
+        input_data: Dict[str, np.ndarray],
+        output_names: Optional[List[str]] = None,
+    ) -> List[np.ndarray]:
         """Perform ONNX Runtime inference.
 
         Args:
-            input_data (np.array): The input data for inference.
+            input_data (Dict[str, np.ndarray]): The input data for inference.
+            output_names (Optional[List[str]]): Optional list of output names to fetch.
 
         Returns:
-            np.array: The output prediction from the ONNX Runtime.
+            List[np.ndarray]: The output predictions from the ONNX Runtime.
         """
         # Return the output prediction
-        return self.ort_session.run(output_names, input_data)
+        return cast(List[np.ndarray], self.ort_session.run(output_names, input_data))
 
     def get_inputs(self) -> List:
         """Get the input details of the ONNX model.
@@ -77,19 +74,29 @@ class ONNXRuntime(BaseRuntime):
 
 
 class TensorRTRuntime(BaseRuntime): # Inherit from BaseRuntime
+    # Move TRT_TO_NP_DTYPE back to class level since it's used by _get_trt_dtype
     TRT_TO_NP_DTYPE = {
-        trt.DataType.FLOAT: np.float32,
-        trt.DataType.HALF: np.float16,
-        trt.DataType.INT8: np.int8,
-        trt.DataType.INT32: np.int32,
-        trt.DataType.BOOL: np.bool_
+        'FLOAT': np.float32,
+        'HALF': np.float16,
+        'INT8': np.int8,
+        'INT32': np.int32,
+        'BOOL': np.bool_
     }
 
     def __init__(self, path: str, batch_size: int = 1): # Added batch_size to constructor
+        # Import TensorRT and CUDA only when needed
+        import tensorrt as trt  # type: ignore
+        import pycuda.driver as cuda  # type: ignore
+        import pycuda.autoinit  # type: ignore
+        
         super().__init__()
         self.engine_path = path # Store engine_path for clarity
         self.batch_size = batch_size
         self.logger = trt.Logger(trt.Logger.WARNING)
+        
+        # Store trt and cuda modules as instance variables for use in other methods
+        self.trt = trt
+        self.cuda = cuda
 
         try:
             with open(self.engine_path, "rb") as f, trt.Runtime(self.logger) as runtime:
@@ -124,31 +131,30 @@ class TensorRTRuntime(BaseRuntime): # Inherit from BaseRuntime
             is_input = self.engine.get_tensor_mode(name) == trt.TensorIOMode.INPUT
             shape = list(self.engine.get_tensor_shape(name))
             trt_engine_dtype = self.engine.get_tensor_dtype(name)
-            np_dtype = self.TRT_TO_NP_DTYPE.get(trt_engine_dtype)
+            np_dtype = self._get_trt_dtype(trt_engine_dtype)
 
             if np_dtype is None:
                 raise ValueError(f"Unsupported TensorRT DType {trt_engine_dtype} for tensor '{name}'.")
 
             if not self.engine.has_implicit_batch_dimension:
                 if shape[0] == -1: shape[0] = self.batch_size
-                elif shape[0] != self.batch_size :
+                elif shape[0] != self.batch_size:
                      print(f"Warning: Tensor '{name}' (batch_dim={shape[0]}) vs requested batch_size={self.batch_size}.")
-                     # Potentially adjust shape[0] = self.batch_size if engine supports dynamic batch for this profile
 
             # Create a mock NodeArg-like object for get_inputs/get_outputs
             class MockNodeArg:
                 def __init__(self, name, shape, dtype_str):
                     self.name = name
-                    self.shape = shape # This shape from engine might have -1 for dynamic dims
-                    self.type = dtype_str # e.g., "tensor(float)"
+                    self.shape = shape
+                    self.type = dtype_str
 
             # Convert trt_dtype to a string representation like ONNX runtime
-            dtype_str = f"tensor({str(trt_engine_dtype).lower().split('.')[-1]})" # Simplistic conversion
+            dtype_str = f"tensor({str(trt_engine_dtype).lower().split('.')[-1]})"
             
             # The actual allocated shape for host/device buffers uses the concrete batch_size
-            allocated_shape = shape.copy() # Make a copy to modify for allocation
+            allocated_shape = shape.copy()
             if not self.engine.has_implicit_batch_dimension and allocated_shape[0] == -1:
-                 allocated_shape[0] = self.batch_size # Use actual batch_size for allocation
+                 allocated_shape[0] = self.batch_size
 
             device_mem_size = trt.volume(allocated_shape) * trt_engine_dtype.itemsize
 
@@ -178,13 +184,17 @@ class TensorRTRuntime(BaseRuntime): # Inherit from BaseRuntime
         for meta in self._inputs_meta: print(f"  Input: {meta.name}, Shape from Engine: {meta.shape}, Type: {meta.type}")
         for meta in self._outputs_meta: print(f"  Output: {meta.name}, Shape from Engine: {meta.shape}, Type: {meta.type}")
 
+    def _get_trt_dtype(self, trt_dtype):
+        """Helper method to get numpy dtype from TensorRT dtype"""
+        return self.TRT_TO_NP_DTYPE.get(str(trt_dtype).split('.')[-1])
+
     def get_inputs(self) -> List[Any]: # Return type matches ONNXRuntime's get_inputs()
         return self._inputs_meta
 
     def get_outputs(self) -> List[Any]: # Return type matches ONNXRuntime's get_outputs()
         return self._outputs_meta
 
-    def run(self, input_data: Dict[str, np.ndarray], output_names: List[str] = None) -> List[np.ndarray]:
+    def run(self, input_data: Dict[str, np.ndarray], output_names: Optional[List[str]] = None) -> List[np.ndarray]:
         """
         Performs inference. output_names is ignored for TRT as outputs are fetched by order/all.
         Returns a list of numpy arrays in the order of engine outputs.
@@ -210,19 +220,15 @@ class TensorRTRuntime(BaseRuntime): # Inherit from BaseRuntime
                  data_array = data_array.squeeze(0)
 
             if data_array.shape != self.h_inputs[i].shape:
-                # If engine has dynamic input shapes, this is where set_input_shape would be called on context
-                # For now, we assume shapes match after preproc or engine is static for the profile.
                 print(f"Warning: Input for '{name}' shape {data_array.shape} vs allocated {self.h_inputs[i].shape}. Ensure consistency or handle dynamic shapes.")
 
-
             np.copyto(self.h_inputs[i], data_array)
-            cuda.memcpy_htod_async(self.d_inputs[i], self.h_inputs[i], self.stream)
-
+            self.cuda.memcpy_htod_async(self.d_inputs[i], self.h_inputs[i], self.stream)
 
         self.context.execute_async_v3(stream_handle=self.stream.handle)
 
         for i in range(len(self.output_tensor_names)):
-            cuda.memcpy_dtoh_async(self.h_outputs[i], self.d_outputs[i], self.stream)
+            self.cuda.memcpy_dtoh_async(self.h_outputs[i], self.d_outputs[i], self.stream)
         self.stream.synchronize()
         
         # Return a list of numpy arrays, similar to ONNXRuntime session.run()
@@ -230,7 +236,6 @@ class TensorRTRuntime(BaseRuntime): # Inherit from BaseRuntime
 
     def get_stream_handle(self):
         return self.stream.handle
-
 
     def release(self):
         print(f"Releasing TensorRT resources for {self.engine_path}...")
